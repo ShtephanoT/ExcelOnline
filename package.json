@@ -1,0 +1,35 @@
+{
+  "name": "excel-online-today-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end test for the Excel TODAY() function in Excel for the web (Chrome).",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:e2e": "playwright test --project=excel-chrome",
+    "test:unit": "playwright test --project=unit",
+    "test:headed": "playwright test --project=excel-chrome --headed",
+    "test:debug": "PWDEBUG=1 playwright test --project=excel-chrome",
+    "auth:manual": "playwright codegen --channel=chrome --save-storage=.auth/user.json https://excel.new",
+    "auth:reset": "rm -rf .auth",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.7.0",
+    "dotenv": "^16.4.5",
+    "eslint": "^9.13.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.11.0",
+    "zod": "^3.23.8"
+  }
+}

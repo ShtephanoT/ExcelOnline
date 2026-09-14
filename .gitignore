@@ -1,0 +1,19 @@
+node_modules/
+
+# Secrets – never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Playwright output
+/.auth/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Demo artefacts are generated, not versioned
+/docs/demo/*.webm
+/docs/demo/*.mp4
+
+.DS_Store

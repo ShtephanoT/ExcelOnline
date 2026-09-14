@@ -1,0 +1,24 @@
+# Static checks plus the unit suite. The end-to-end test is not run here: it
+# needs a real Microsoft account, and storing those credentials in CI is a
+# decision for whoever owns the account (see "FAQ" in the README).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit
