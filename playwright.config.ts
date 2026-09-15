@@ -31,6 +31,8 @@ export default defineConfig({
     navigationTimeout: appConfig.appLoadTimeoutMs,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // A failed sign-in is hard to reason about from a stack trace alone.
+    video: 'retain-on-failure',
   },
 
   projects: [

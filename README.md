@@ -157,6 +157,24 @@ in order of preference:
    as `otplib` and a shared secret in `.env`. Not implemented here: it needs the
    account's TOTP seed, which weakens the second factor.
 
+**Passkeys / Windows Hello hijack the sign-in.**
+If the account has a passkey or Windows Hello enrolled, Microsoft skips the
+password and asks for the platform authenticator, which an automated browser
+cannot satisfy - the run dead-ends on _"We couldn't sign you in with a
+passkey"_. The sign-in page decides by feature-detecting
+`window.PublicKeyCredential`, so `disablePasskeyPrompts()` hides that property
+before the first navigation and the password is offered instead. If a screen
+still asks for another credential, the login page object clicks its way back
+("use your password" / "sign in another way") before giving up. An account with
+_no_ password at all can only be handled by `npm run auth:manual`.
+
+**The sign-in UI is not in the browser's language.**
+Microsoft serves it in the language of the account or the client's region, so a
+run can be shown Ukrainian, German or Japanese regardless of `LOCALE`. Every
+selector in `microsoft-login.page.ts` is therefore id- or attribute-based, never
+text-based, and the failure message reports the ids on screen rather than words
+a maintainer may not read.
+
 **Automated sign-ins get flagged.**
 Repeated logins — especially from a datacenter IP — trigger "unusual activity"
 checks, CAPTCHAs, or a device-confirmation prompt. The cached session keeps
@@ -213,9 +231,12 @@ reachable.
 The static checks and all 16 unit tests pass (see below). The end-to-end run
 needs a Microsoft account and outbound access to `excel.new`, neither of which
 was available in the environment this was written in, so the Excel selectors are
-best-effort and centralised precisely so the first real run can correct them
-quickly. Run `npm run test:headed` with your own credentials to see where it
-stands.
+best-effort and centralised precisely so a real run can correct them quickly.
+
+The first live run did exactly that: it was pushed into the passkey flow
+described above, which is now suppressed at the source. Run
+`npm run test:headed` with your own credentials to see where it stands - and if
+a selector needs adjusting, it is one file.
 
 ```
 $ npm run test:unit
