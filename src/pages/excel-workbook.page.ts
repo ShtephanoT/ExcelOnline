@@ -1,6 +1,6 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { excelSelectors, gridCellCandidates } from './excel.selectors.js';
-import { anyVisible, clickIfPresent, isAnyVisible, type LocatorRoot } from '../utils/locators.js';
+import { anyVisible, clickIfPresent, type LocatorRoot } from '../utils/locators.js';
 
 export interface ExcelWorkbookPageOptions {
   newWorkbookUrl: string;
@@ -8,20 +8,12 @@ export interface ExcelWorkbookPageOptions {
   actionTimeoutMs: number;
 }
 
-/**
- * Page object for a workbook open in Excel for the web.
- *
- * Two things about this app shape the design:
- *
- *  - The editor is usually hosted in a WAC iframe, so every locator is rooted at
- *    {@link root} rather than at the page.
- *  - The grid is painted on a canvas. There is an accessibility layer over it,
- *    but its markup is neither documented nor stable, so the *value* of a cell is
- *    read by copying it to the clipboard - which is plain, first-class Excel
- *    behaviour - and the accessibility layer is only the fallback.
- */
+const OVERLAY_CLICK_TIMEOUT_MS = 5_000;
+const GRID_FOCUS_TIMEOUT_MS = 10_000;
+const READ_ATTEMPT_TIMEOUT_MS = 2_000;
+const READ_POLL_INTERVAL_MS = 500;
+
 export class ExcelWorkbookPage {
-  /** Where the Excel UI actually lives: the WAC iframe, or the page itself. */
   private root: LocatorRoot;
 
   constructor(
@@ -31,42 +23,41 @@ export class ExcelWorkbookPage {
     this.root = page;
   }
 
-  /** Creates a new blank workbook and waits until the grid accepts input. */
   async openNewWorkbook(): Promise<void> {
     await this.page.goto(this.options.newWorkbookUrl, { waitUntil: 'domcontentloaded' });
     await this.waitForEditorReady();
   }
 
-  /**
-   * Locates the app (iframe or page) and waits until the editor is interactive.
-   * Exposed separately because the sign-in step lands in the editor too and uses
-   * this as its proof that the account really can open Excel for the web.
-   */
   async waitForEditorReady(): Promise<void> {
     await this.resolveAppRoot();
-    await this.waitUntilReady();
-    await this.dismissStartupOverlays();
+    await anyVisible(this.root, excelSelectors.nameBox).waitFor({
+      state: 'visible',
+      timeout: this.options.appLoadTimeoutMs,
+    });
+    await clickIfPresent(this.root, excelSelectors.dismissableOverlays, 2_000);
   }
 
-  /** Selects a cell through the Name Box - independent of scroll position and zoom. */
   async selectCell(cellReference: string): Promise<void> {
     const nameBox = anyVisible(this.root, excelSelectors.nameBox);
-    await nameBox.click({ timeout: this.options.actionTimeoutMs });
+
+    try {
+      await nameBox.click({ timeout: OVERLAY_CLICK_TIMEOUT_MS });
+    } catch {
+      await this.page.keyboard.press('Escape');
+      await nameBox.click({ timeout: OVERLAY_CLICK_TIMEOUT_MS });
+    }
+
     await nameBox.fill(cellReference);
     await nameBox.press('Enter');
-    // The grid takes focus back; without this the following keystrokes can be lost.
-    await this.page.waitForTimeout(250);
+    await this.waitForGridFocus();
   }
 
-  /** Types a formula into a cell and commits it with Enter. */
   async enterFormula(cellReference: string, formula: string): Promise<void> {
     await this.selectCell(cellReference);
     await this.page.keyboard.type(formula, { delay: 30 });
     await this.page.keyboard.press('Enter');
-    await this.waitForCalculationToSettle();
   }
 
-  /** The formula stored in a cell, as shown by the formula bar (e.g. "=TODAY()"). */
   async getFormula(cellReference: string): Promise<string> {
     await this.selectCell(cellReference);
     const formulaBar = anyVisible(this.root, excelSelectors.formulaBar);
@@ -75,89 +66,80 @@ export class ExcelWorkbookPage {
     return text.trim();
   }
 
-  /**
-   * The text Excel renders in a cell - the formula's *result*, formatted with the
-   * workbook's locale and number format.
-   */
   async getDisplayedValue(cellReference: string): Promise<string> {
     await this.selectCell(cellReference);
+    const deadline = Date.now() + this.options.actionTimeoutMs;
 
-    const value =
-      (await this.readSelectedCellFromClipboard()) ??
-      (await this.readCellFromAccessibilityLayer(cellReference));
-
-    if (value === null) {
-      throw new Error(
-        `Could not read the displayed value of ${cellReference}. ` +
-          'Neither the clipboard nor the accessibility layer returned anything - ' +
-          'see "Known limitations" in the README.',
-      );
+    for (;;) {
+      const value =
+        (await this.readFromClipboard()) ?? (await this.readFromAccessibilityLayer(cellReference));
+      if (value !== null) {
+        return value;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `${cellReference} still reads as empty after ${this.options.actionTimeoutMs} ms - ` +
+            'neither the clipboard nor the accessibility layer returned anything. ' +
+            'See "Known limitations" in the README.',
+        );
+      }
+      await this.page.waitForTimeout(READ_POLL_INTERVAL_MS);
     }
-    return value;
   }
 
-  /** Ctrl+C on the selected cell, then read the system clipboard. */
-  private async readSelectedCellFromClipboard(): Promise<string | null> {
+  private async readFromClipboard(): Promise<string | null> {
     try {
       await this.page.keyboard.press('Control+C');
       const text = await this.page.evaluate(() => navigator.clipboard.readText());
-      const trimmed = text.replace(/[\r\n\t]+$/, '').trim();
-      return trimmed.length > 0 ? trimmed : null;
-    } catch {
-      return null; // Clipboard access is a nice-to-have; fall through to the DOM.
-    }
-  }
-
-  /** Fallback: read the cell's accessible name from the layer over the canvas. */
-  private async readCellFromAccessibilityLayer(cellReference: string): Promise<string | null> {
-    const cell = anyVisible(this.root, gridCellCandidates(cellReference));
-    try {
-      await cell.waitFor({ state: 'visible', timeout: 5_000 });
-      const label = (await cell.getAttribute('aria-label')) ?? (await cell.innerText());
-      // Accessible names are usually "<reference> <value>"; drop the reference.
-      const value = label.replace(new RegExp(`^\\s*${cellReference}\\b[:\\s]*`, 'i'), '').trim();
-      return value.length > 0 ? value : null;
+      return text.trim() || null;
     } catch {
       return null;
     }
   }
 
-  /** Office web apps render inside an iframe in most entry points, but not all. */
+  private async readFromAccessibilityLayer(cellReference: string): Promise<string | null> {
+    const cell = anyVisible(this.root, gridCellCandidates(cellReference));
+    try {
+      await cell.waitFor({ state: 'visible', timeout: READ_ATTEMPT_TIMEOUT_MS });
+      const label = (await cell.getAttribute('aria-label')) ?? (await cell.innerText());
+      return label.replace(new RegExp(`^\\s*${cellReference}\\b[:\\s]*`, 'i'), '').trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
   private async resolveAppRoot(): Promise<void> {
-    const frameIsPresent = await isAnyVisible(
-      this.page,
-      excelSelectors.appFrame,
-      this.options.appLoadTimeoutMs / 3,
-    );
-    this.root = frameIsPresent
-      ? this.page.frameLocator(excelSelectors.appFrame.join(', '))
-      : this.page;
-  }
+    const appFrame = anyVisible(this.page, excelSelectors.appFrame);
+    const nameBoxInPage = anyVisible(this.page, excelSelectors.nameBox);
 
-  /** The Name Box appearing is the earliest reliable "the editor is interactive" signal. */
-  private async waitUntilReady(): Promise<void> {
-    await anyVisible(this.root, [...excelSelectors.nameBox, ...excelSelectors.grid]).waitFor({
-      state: 'visible',
-      timeout: this.options.appLoadTimeoutMs,
-    });
-    await anyVisible(this.root, excelSelectors.nameBox).waitFor({
-      state: 'visible',
-      timeout: this.options.appLoadTimeoutMs,
+    const whenVisible = async (locator: Locator, root: () => LocatorRoot): Promise<LocatorRoot> => {
+      await locator.waitFor({ state: 'visible', timeout: this.options.appLoadTimeoutMs });
+      return root();
+    };
+
+    this.root = await Promise.any([
+      whenVisible(appFrame, () => appFrame.contentFrame()),
+      whenVisible(nameBoxInPage, () => this.page),
+    ]).catch(() => {
+      throw new Error(
+        `Excel for the web did not load within ${this.options.appLoadTimeoutMs} ms: neither the ` +
+          `app iframe nor the Name Box appeared at ${this.page.url()}.`,
+      );
     });
   }
 
-  private async dismissStartupOverlays(): Promise<void> {
-    await clickIfPresent(this.root, excelSelectors.dismissableOverlays, 2_000);
-  }
+  private async waitForGridFocus(): Promise<void> {
+    const focused = excelSelectors.gridKeyboardInput.map((s) => `${s}:focus`).join(', ');
 
-  /**
-   * Excel for the web recalculates on the server, so the committed value arrives
-   * asynchronously. Waiting for the network to go quiet is cheap insurance and is
-   * capped so a chatty telemetry connection cannot hang the test.
-   */
-  private async waitForCalculationToSettle(): Promise<void> {
-    await this.page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
-      /* Excel keeps long-poll connections open; a timeout here is not a failure. */
-    });
+    await this.root
+      .locator(focused)
+      .first()
+      .waitFor({ state: 'attached', timeout: GRID_FOCUS_TIMEOUT_MS })
+      .catch(() => {
+        throw new Error(
+          'The grid never took keyboard focus back after the Name Box, so a formula typed now ' +
+            'would not reach the cell. Check `gridKeyboardInput` in src/pages/excel.selectors.ts.',
+        );
+      });
   }
 }
