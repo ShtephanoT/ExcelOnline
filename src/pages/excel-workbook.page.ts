@@ -88,10 +88,12 @@ export class ExcelWorkbookPage {
   }
 
   private async readFromClipboard(): Promise<string | null> {
+    const sentinel = `not-copied-${Date.now()}`;
     try {
+      await this.page.evaluate((value) => navigator.clipboard.writeText(value), sentinel);
       await this.page.keyboard.press('Control+C');
       const text = await this.page.evaluate(() => navigator.clipboard.readText());
-      return text.trim() || null;
+      return text === sentinel ? null : text.trim() || null;
     } catch {
       return null;
     }

@@ -81,10 +81,11 @@ irrelevant.
 
 **A cell's value is read through the clipboard.** The grid is a `<canvas>`;
 `Ctrl+C` plus a clipboard read is ordinary Excel behaviour and more stable than
-the undocumented accessibility layer, which is kept as a fallback. The read
-polls until the cell holds something — it must not wait for `networkidle`,
-because the app keeps long-poll connections open and the network never goes
-quiet.
+the undocumented accessibility layer, which is kept as a fallback — though on the
+build tested it returns nothing, so treat it as a courtesy rather than a safety
+net. The read polls until the cell holds something; it must not wait for
+`networkidle`, because the app keeps long-poll connections open and the network
+never goes quiet.
 
 **"Today" is a small set.** `TODAY()` follows the **browser's time zone** —
 measured, not assumed: the same workbook answered `9/17/2026` under
@@ -150,6 +151,15 @@ sleep, which was the cause of intermittent passes.
 
 **Clipboard access** needs `clipboard-read`/`clipboard-write`, granted in
 `playwright.config.ts`. Chromium-only, which suits a Chrome-targeted suite.
+
+Reading it naively is unsafe, and this bit once. When `Ctrl+C` does not take
+effect — the window lost focus, an overlay ate the keystroke — the read returns
+whatever was on the _system_ clipboard already. One run compared an SSH key that
+had just been copied by hand against the expected date. A clipboard that happened
+to hold today's date would have produced a false pass instead, which is the real
+danger. So a sentinel is written to the clipboard before `Ctrl+C`: finding it
+still there means the copy never happened, and the run fails saying the cell reads
+as empty. That is the honest answer, rather than a pass on a coincidence.
 
 **`#####` instead of a date** happens when the column is too narrow. The parser
 reports it as "not a date", not a silent pass.
