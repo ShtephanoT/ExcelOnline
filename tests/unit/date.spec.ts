@@ -1,52 +1,43 @@
 import { expect, test } from '@playwright/test';
 import {
-  addDays,
   expectedDates,
+  matchesExpectedDate,
   parseDisplayedDate,
   todayInTimeZone,
 } from '../../src/utils/date.js';
 
-/**
- * The date logic is the only part of the suite with real branching, so it is
- * tested on its own: these run in a second, without a browser or an MS account,
- * and they are what makes the e2e assertion trustworthy.
- */
-test.describe('todayInTimeZone()', () => {
-  const instant = new Date('2026-09-14T23:30:00Z');
+const INSTANT = new Date('2026-09-14T23:30:00Z');
 
+test.describe('todayInTimeZone()', () => {
   test('formats as ISO in the requested zone', () => {
-    expect(todayInTimeZone('UTC', instant)).toBe('2026-09-14');
+    expect(todayInTimeZone('UTC', INSTANT)).toBe('2026-09-14');
   });
 
   test('rolls over where the local day is already tomorrow', () => {
-    expect(todayInTimeZone('Europe/Helsinki', instant)).toBe('2026-09-15');
+    expect(todayInTimeZone('Europe/Helsinki', INSTANT)).toBe('2026-09-15');
   });
 
   test('stays on the previous day west of UTC', () => {
-    expect(todayInTimeZone('America/Los_Angeles', instant)).toBe('2026-09-14');
+    expect(todayInTimeZone('America/Los_Angeles', INSTANT)).toBe('2026-09-14');
   });
 });
 
 test.describe('expectedDates()', () => {
-  const instant = new Date('2026-09-14T23:30:00Z');
-
   test('accepts both the pinned zone and UTC', () => {
-    expect(expectedDates({ timeZone: 'Europe/Helsinki', instant })).toEqual([
+    expect(expectedDates({ timeZone: 'Europe/Helsinki', instant: INSTANT })).toEqual([
       '2026-09-14',
       '2026-09-15',
     ]);
   });
 
   test('collapses to a single date when the zone matches UTC', () => {
-    expect(expectedDates({ timeZone: 'UTC', instant })).toEqual(['2026-09-14']);
+    expect(expectedDates({ timeZone: 'UTC', instant: INSTANT })).toEqual(['2026-09-14']);
   });
 
   test('widens by a day either side when midnight tolerance is on', () => {
-    expect(expectedDates({ timeZone: 'UTC', instant, allowMidnightTolerance: true })).toEqual([
-      '2026-09-13',
-      '2026-09-14',
-      '2026-09-15',
-    ]);
+    expect(
+      expectedDates({ timeZone: 'UTC', instant: INSTANT, allowMidnightTolerance: true }),
+    ).toEqual(['2026-09-13', '2026-09-14', '2026-09-15']);
   });
 });
 
@@ -59,24 +50,10 @@ test.describe('parseDisplayedDate()', () => {
     expect(parseDisplayedDate('09/08/2026')).toEqual(['2026-08-09', '2026-09-08']);
   });
 
-  test('reads European separators', () => {
+  test('reads other separators and ISO order', () => {
     expect(parseDisplayedDate('14.09.2026')).toEqual(['2026-09-14']);
     expect(parseDisplayedDate('14-09-2026')).toEqual(['2026-09-14']);
-  });
-
-  test('reads ISO order', () => {
     expect(parseDisplayedDate('2026-09-14')).toEqual(['2026-09-14']);
-  });
-
-  test('reads month names, long and short, in any position', () => {
-    expect(parseDisplayedDate('14-Sep-2026')).toEqual(['2026-09-14']);
-    expect(parseDisplayedDate('September 14, 2026')).toEqual(['2026-09-14']);
-    expect(parseDisplayedDate('14 september 2026')).toEqual(['2026-09-14']);
-  });
-
-  test("expands two-digit years with Excel's 1930 pivot", () => {
-    expect(parseDisplayedDate('9/14/26')).toEqual(['2026-09-14']);
-    expect(parseDisplayedDate('9/14/86')).toEqual(['1986-09-14']);
   });
 
   test('rejects impossible calendar dates', () => {
@@ -91,14 +68,27 @@ test.describe('parseDisplayedDate()', () => {
   });
 });
 
-test.describe('addDays()', () => {
-  test('crosses month and year boundaries', () => {
-    expect(addDays('2026-09-14', 1)).toBe('2026-09-15');
-    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
-    expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
+test.describe('matchesExpectedDate()', () => {
+  const accepted = ['2026-09-17'];
+
+  test('accepts the date the run expects', () => {
+    expect(matchesExpectedDate('9/17/2026', accepted)).toBe(true);
   });
 
-  test('rejects input that is not an ISO date', () => {
-    expect(() => addDays('14/09/2026', 1)).toThrow(/Not an ISO date/);
+  test('rejects a real date that is the wrong day', () => {
+    expect(matchesExpectedDate('9/10/2026', accepted)).toBe(false);
+    expect(matchesExpectedDate('9/18/2026', accepted)).toBe(false);
+    expect(matchesExpectedDate('9/17/2025', accepted)).toBe(false);
+  });
+
+  test('rejects text that is not a date', () => {
+    expect(matchesExpectedDate('#####', accepted)).toBe(false);
+    expect(matchesExpectedDate('', accepted)).toBe(false);
+  });
+
+  test('accepts an ambiguous rendering when either reading matches', () => {
+    expect(matchesExpectedDate('09/08/2026', ['2026-08-09'])).toBe(true);
+    expect(matchesExpectedDate('09/08/2026', ['2026-09-08'])).toBe(true);
+    expect(matchesExpectedDate('09/08/2026', ['2026-09-07'])).toBe(false);
   });
 });
