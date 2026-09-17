@@ -15,5 +15,6 @@ node_modules/
 # Generated artefacts
 /docs/demo/*.webm
 /docs/demo/*.mp4
+!/docs/demo/today-demo.webm
 
 .DS_Store

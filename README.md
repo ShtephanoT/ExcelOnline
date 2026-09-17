@@ -98,9 +98,13 @@ against `#####`: a check that cannot fail is worth nothing.
 
 ## Demo recording
 
-Video is on for every end-to-end run: `test-results/<test>/video.webm`, also
+A recording of a passing run is committed:
+[`docs/demo/today-demo.webm`](docs/demo/today-demo.webm).
+
+Video is on for every end-to-end run, at `test-results/<test>/video.webm`, and is
 embedded in `npm run report`. Copy it out before running anything else —
-`outputDir` is shared and emptied at the start of every run. See
+`outputDir` is shared by all three projects and emptied at the start of every
+run, so the unit suite deletes the video the end-to-end run just made. See
 [`docs/demo/README.md`](docs/demo/README.md).
 
 ## Limitations and workarounds

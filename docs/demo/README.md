@@ -29,5 +29,5 @@ Optional - convert to something easier to attach to a pull request:
 ffmpeg -i test-results/*/video.webm -vf "fps=10,scale=1280:-1" docs/demo/today.gif
 ```
 
-Recordings are git-ignored (see `.gitignore`); attach the file to the PR or a
-release instead of committing it.
+`today-demo.webm` in this folder is a committed recording of a passing run. Other
+recordings stay git-ignored, so only that one deliverable is versioned.
