@@ -15,6 +15,14 @@ npm run test:headed       # or watch it happen
 npm run report            # HTML report with the video embedded
 ```
 
+**Copy the recording out before running anything else.** `outputDir` is shared
+by all three projects and Playwright empties it at the start of _every_ run, so
+a later `npm run test:unit` deletes the video a passing `test:e2e` just made:
+
+```bash
+cp test-results/*/video.webm docs/demo/today-demo.webm
+```
+
 Optional - convert to something easier to attach to a pull request:
 
 ```bash
